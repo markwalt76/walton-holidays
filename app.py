@@ -47,3 +47,12 @@ def ping():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+
+from flask import request
+
+@app.route("/submit", methods=["POST"])
+def submit():
+    # on valide que la page fonctionne; l’envoi d’emails/Sheets viendra après
+    name = request.form.get("name")
+    email = request.form.get("email")
+    return f"Demande reçue pour {name} ({email}).", 200
