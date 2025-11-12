@@ -1,16 +1,25 @@
 <!doctype html>
-<html lang="fr">
+<html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Demande envoyée</title>
+  <title>Walton Time Off - Request Sent</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;padding:24px;max-width:720px;margin:auto}</style>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;padding:24px;background:#f7f7fb}
+    .card{max-width:600px;margin:0 auto;background:#fff;padding:24px;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.06)}
+    img.logo{height:40px;margin-bottom:10px}
+  </style>
 </head>
 <body>
-  <h2>Merci !</h2>
-  <p>Votre demande a été envoyée à l’approbateur choisi.</p>
-  <p><b>Rappel :</b> le calcul est de <b>{{ days }}</b> jours ouvrés.</p>
-  <p>Un email a été envoyé à <code>{{ approver }}</code>.</p>
-  <p><a href="/">← Retour au formulaire</a></p>
+  <div class="card">
+    {% if logo_url %}
+    <img src="{{ logo_url }}" alt="Logo" class="logo">
+    {% endif %}
+    <h2>Thank you!</h2>
+    <p>Your time off request has been sent to <b>{{ approver }}</b>.</p>
+    <p><b>Dates:</b> {{ start }} → {{ end }}</p>
+    <p><b>Duration:</b> {{ days }} business day(s).</p>
+    <p>You’ll receive an email once it’s reviewed.</p>
+  </div>
 </body>
 </html>
