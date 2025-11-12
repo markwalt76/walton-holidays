@@ -2,18 +2,18 @@ import os
 import smtplib
 import ssl
 from email.message import EmailMessage
-from flask import Flask, render_template, request, jsonify, Response
+from flask import Flask, render_template, request, jsonify
 
 app = Flask(__name__, template_folder="templates")
 
-# --- CONFIG APPROVERS ---
+# --- CONFIG DES APPROBATEURS ---
 APPROVERS = {
     "mark": os.environ.get("EMAIL_MARK", "mw@walton.fr"),
     "nhan": os.environ.get("EMAIL_NHAN", "nhan@walton.fr"),
     "anh": os.environ.get("EMAIL_ANH", "anh@walton.fr"),
 }
 
-# --- HELPER : ENVOI EMAIL ---
+# --- FONCTION ENVOI EMAIL ---
 def send_mail(to_addrs, subject, html, cc_addrs=None):
     host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
     port = int(os.environ.get("SMTP_PORT", "587"))
@@ -22,7 +22,7 @@ def send_mail(to_addrs, subject, html, cc_addrs=None):
     mail_from = os.environ.get("MAIL_FROM", user)
 
     if not user or not pwd:
-        app.logger.error("SMTP credentials missing")
+        app.logger.error("❌ SMTP credentials missing")
         return False
 
     msg = EmailMessage()
@@ -35,7 +35,7 @@ def send_mail(to_addrs, subject, html, cc_addrs=None):
         if isinstance(cc_addrs, str):
             cc_addrs = [cc_addrs]
         msg["Cc"] = ", ".join(cc_addrs)
-    msg.set_content("HTML version required")
+    msg.set_content("HTML")
     msg.add_alternative(html, subtype="html")
 
     try:
@@ -44,16 +44,18 @@ def send_mail(to_addrs, subject, html, cc_addrs=None):
             s.starttls(context=ssl.create_default_context())
             s.login(user, pwd)
             s.send_message(msg)
-        app.logger.info(f"Mail sent to {to_addrs} (cc={cc_addrs})")
+        app.logger.info(f"✅ Mail sent to {to_addrs} (cc={cc_addrs})")
         return True
     except Exception as e:
-        app.logger.exception(f"SMTP send failed: {e}")
+        app.logger.exception(f"❌ SMTP send failed: {e}")
         return False
 
-# --- ROUTES ---
+
+# --- ROUTES DE BASE ---
 @app.route("/")
 def form():
     return render_template("form.html")
+
 
 @app.route("/submit", methods=["POST"])
 def submit():
@@ -85,12 +87,7 @@ def submit():
     """
 
     cc = [os.environ.get("ALWAYS_CC", "mw@walton.fr")]
-    ok = send_mail(
-        [approver_email],
-        f"[Walton] Demande de congés — {name}",
-        html,
-        cc_addrs=cc
-    )
+    ok = send_mail([approver_email], f"[Walton] Demande de congés — {name}", html, cc_addrs=cc)
 
     if ok:
         ack = f"""
@@ -103,77 +100,50 @@ def submit():
     else:
         return "Erreur d'envoi email ❌ — vérifiez les logs.", 500
 
+
 @app.route("/decision")
 def decision():
     status = request.args.get("status")
     email = request.args.get("email")
     name = request.args.get("name", "")
+
     if status == "approved":
         note = f"La demande de {name} ({email}) est approuvée ✅"
     else:
         note = f"La demande de {name} ({email}) est refusée ❌"
-    send_mail(
-        [email],
-        f"[Walton] Décision — {status}",
-        f"<p>{note}</p>",
-        cc_addrs=[os.environ.get("ALWAYS_CC", "mw@walton.fr")]
-    )
+
+    send_mail([email], f"[Walton] Décision — {status}", f"<p>{note}</p>", cc_addrs=[os.environ.get("ALWAYS_CC", "mw@walton.fr")])
     return f"{note}", 200
 
-# --- ROUTE DE TEST SMTP ---
+
+# --- ROUTE TEST SMTP (unique et corrigée) ---
 @app.get("/_smtp_test")
 def smtp_test():
-    """Test l'envoi SMTP avec les variables d'environnement actuelles."""
+    """Test d'envoi SMTP avec les variables d'environnement actuelles."""
     to = os.getenv("SMTP_USER")
-    try:
-        send_mail(to, "[Walton] SMTP Test", "<p>Test d'envoi réussi ✅</p>")
+    ok = send_mail(
+        to_addrs=[to],
+        subject="[Walton] SMTP Test",
+        html="<p>Test d'envoi réussi ✅</p>",
+        cc_addrs=None
+    )
+    if ok:
         return jsonify(ok=True, to=to)
-    except Exception as e:
-        app.logger.exception(f"SMTP test failed: {e}")
-        return jsonify(ok=False, error=str(e)), 500
+    else:
+        return jsonify(ok=False, error="SMTP send failed (voir logs Render)"), 500
 
+
+# --- ROUTES DE CONTRÔLE ---
 @app.route("/ping")
 def ping():
     return "pong", 200
+
 
 @app.route("/healthz")
 def health():
     return "ok", 200
 
+
+# --- MAIN ---
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
-
-# --- TEST SMTP: /_smtp_test ---
-import os, smtplib, ssl
-from email.message import EmailMessage
-from flask import jsonify
-
-def _smtp_send(to, subject, html):
-    host = os.getenv("SMTP_HOST", "smtp.gmail.com")
-    port = int(os.getenv("SMTP_PORT", "587"))
-    user = os.getenv("SMTP_USER")
-    pwd  = os.getenv("SMTP_PASSWORD")
-    mail_from = os.getenv("MAIL_FROM", user or "")
-
-    msg = EmailMessage()
-    msg["Subject"] = subject
-    msg["From"] = mail_from if mail_from else user
-    msg["To"] = to
-    msg.set_content("HTML")
-    msg.add_alternative(html, subtype="html")
-
-    with smtplib.SMTP(host, port, timeout=30) as s:
-        s.ehlo()
-        s.starttls(context=ssl.create_default_context())
-        s.login(user, pwd)
-        s.send_message(msg)
-
-@app.route("/_smtp_test", methods=["GET"])
-def smtp_test():
-    to = os.getenv("SMTP_USER")
-    try:
-        _smtp_send(to, "[Walton] SMTP Test", "<p>Test d'envoi réussi ✅</p>")
-        return jsonify(ok=True, to=to)
-    except Exception as e:
-        app.logger.exception(f"SMTP test failed: {e}")
-        return jsonify(ok=False, error=str(e)), 500
