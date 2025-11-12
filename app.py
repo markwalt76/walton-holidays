@@ -356,7 +356,7 @@ def admin():
         return Response(html, status=200, mimetype="text/html; charset=utf-8")
     except Exception as e:
         app.logger.exception(e)
-        return jsonify(ok=False, error=str(e)), 500)
+        return jsonify(ok=False, error=str(e)), 500  # ← fixed (no extra ')')
 
 # -------------------------------
 # Diagnostics
