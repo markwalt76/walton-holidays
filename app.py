@@ -312,3 +312,104 @@ def ping():
 # -----------------------------------------------------------------------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(_env("PORT", "10000")))
+
+
+# -------------------------------
+# Admin (Basic Auth) : /admin
+# -------------------------------
+from functools import wraps
+from base64 import b64decode
+
+def check_auth(auth_header: str) -> bool:
+    user = _env("ADMIN_USER")
+    pwd  = _env("ADMIN_PASS")
+    if not auth_header or not auth_header.startswith("Basic "):
+        return False
+    try:
+        raw = b64decode(auth_header.split(" ",1)[1]).decode("utf-8")
+        given_user, given_pwd = raw.split(":",1)
+        return (user and pwd and given_user == user and given_pwd == pwd)
+    except Exception:
+        return False
+
+def require_auth(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        from flask import request
+        if not check_auth(request.headers.get("Authorization")):
+            from flask import Response
+            return Response("Authentication required", 401, {"WWW-Authenticate":"Basic realm=\"Walton Admin\""})
+        return f(*args, **kwargs)
+    return wrapper
+
+@app.get("/admin")
+@require_auth
+def admin():
+    """Affiche les demandes depuis Google Sheets (triées par date desc)."""
+    try:
+        sheet_id = _env("SPREADSHEET_ID")
+        gc = get_sheets_client()
+        sh = gc.open_by_key(sheet_id)
+        ws = sh.sheet1
+        rows = ws.get_all_values()  # list of lists
+        if not rows:
+            rows = [SHEET_HEADERS]
+        headers = rows[0]
+        data = rows[1:]
+
+        # Trouve l'index de "Timestamp" si présent
+        ts_idx = headers.index("Timestamp") if "Timestamp" in headers else None
+
+        # Trie par Timestamp desc (si dispo), sinon laisse l'ordre
+        if ts_idx is not None:
+            def parse_ts(v):
+                try:
+                    return datetime.fromisoformat(v.replace("Z",""))
+                except Exception:
+                    return datetime.min
+            data.sort(key=lambda r: parse_ts(r[ts_idx]) if len(r)>ts_idx else datetime.min, reverse=True)
+
+        # Rendu HTML minimal
+        table_rows = []
+        for r in data:
+            # complète à 9 colonnes si besoin
+            r = (r + [""]*9)[:9]
+            table_rows.append(f"<tr><td>{r[0]}</td><td>{r[1]}</td><td>{r[2]}</td><td>{r[3]}</td><td>{r[4]}</td><td>{r[5]}</td><td style='text-align:right'>{r[6]}</td><td>{r[7]}</td><td>{r[8]}</td></tr>")
+
+        html = f"""
+        <!doctype html><html lang='fr'><head>
+          <meta charset='utf-8'>
+          <meta name='viewport' content='width=device-width, initial-scale=1'>
+          <title>Admin - Walton Holidays</title>
+          <style>
+            body{{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0;background:#f7f7fb}}
+            .container{{max-width:1100px;margin:24px auto;background:#fff;border-radius:12px;padding:24px;box-shadow:0 6px 24px rgba(0,0,0,.06)}}
+            h1{{margin-top:0}}
+            table{{width:100%;border-collapse:collapse}}
+            th,td{{padding:10px;border-bottom:1px solid #eee;font-size:14px}}
+            th{{text-align:left;background:#fafafa}}
+            .badge{{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px}}
+            .ok{{background:#DCFCE7;color:#166534}}
+            .no{{background:#FEE2E2;color:#991B1B}}
+          </style>
+        </head><body>
+          <div class='container'>
+            <h1>Admin — Demandes de congés</h1>
+            <p>Tri : du plus récent au plus ancien. Total : {len(data)} demandes.</p>
+            <table>
+              <thead>
+                <tr>
+                  <th>Timestamp</th><th>Nom</th><th>Email</th><th>Début</th><th>Fin</th><th>Raison</th><th>Jours</th><th>Approbateur</th><th>Statut</th>
+                </tr>
+              </thead>
+              <tbody>
+                {''.join(table_rows)}
+              </tbody>
+            </table>
+          </div>
+        </body></html>
+        """
+        return Response(html, status=200, mimetype="text/html; charset=utf-8")
+    except Exception as e:
+        app.logger.exception(e)
+        return jsonify(ok=False, error=str(e)), 500
