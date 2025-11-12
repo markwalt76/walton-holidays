@@ -172,7 +172,9 @@ def write_decision_to_sheet(email:str, name:str, start_date:str, end_date:str,
 # -----------------------------------------------------------------------------
 @app.route("/", methods=["GET"])
 def form():
-    return render_template("form.html")
+    from flask import Response
+    html = render_template("form.html")
+    return Response(html, status=200, mimetype="text/html; charset=utf-8")
 
 @app.route("/submit", methods=["POST"])
 def submit():
@@ -221,7 +223,9 @@ def submit():
           <p>Vous recevrez un email dès décision.</p>
         """
         send_mail([email], "[Walton] Votre demande a été envoyée", ack, cc_addrs=cc)
-        return render_template("submitted.html", name=name, approver=approver_email, start=start_date, end=end_date, days=days)
+        from flask import Response
+    html = render_template("submitted.html", name=name, approver=approver_email, start=start_date, end=end_date, days=days)
+    return Response(html, status=200, mimetype="text/html; charset=utf-8")
     else:
         return "Erreur d'envoi email ❌ — vérifiez les logs.", 500
 
@@ -261,7 +265,9 @@ def decision():
         f"<p>Bonjour {name},</p><p>Votre demande de congés {sd} → {ed} est {note}.</p>",
         cc_addrs=[_env("ALWAYS_CC", "mw@walton.fr")]
     )
-    return render_template("decision_result.html", name=name, email=email, status=status, start=sd, end=ed, days=days)
+    from flask import Response
+    html = render_template("decision_result.html", name=name, email=email, status=status, start=sd, end=ed, days=days)
+    return Response(html, status=200, mimetype="text/html; charset=utf-8")
 
 # -----------------------------------------------------------------------------
 # Diagnostics
