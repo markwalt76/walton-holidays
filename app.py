@@ -7,47 +7,49 @@ from datetime import datetime, date, timedelta
 
 from flask import Flask, render_template, request, jsonify, Response
 
-# (Google Sheets)
+# Google Sheets
 import gspread
 from google.oauth2.service_account import Credentials
 
-# -----------------------------------------------------------------------------
-# Flask
-# -----------------------------------------------------------------------------
+
+# -------------------------------
+# Flask & templates
+# -------------------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TEMPLATE_DIR = os.path.join(BASE_DIR, "templates")
-
 app = Flask(__name__, template_folder=TEMPLATE_DIR)
 
-# -----------------------------------------------------------------------------
-# Config approbateurs via variables d'env (avec valeurs par défaut)
-# -----------------------------------------------------------------------------
+
+# -------------------------------
+# Config approbateurs (via ENV)
+# -------------------------------
 APPROVERS = {
     "mark": os.environ.get("EMAIL_MARK", "mw@walton.fr"),
     "nhan": os.environ.get("EMAIL_NHAN", "nhan@walton.fr"),
     "anh":  os.environ.get("EMAIL_ANH",  "anh@walton.fr"),
 }
 
-# -----------------------------------------------------------------------------
+
+# -------------------------------
 # Helpers
-# -----------------------------------------------------------------------------
+# -------------------------------
 def _env(key, default=None):
     return os.environ.get(key, default)
 
 def business_days(d1: date, d2: date) -> int:
-    """Nombre de jours ouvrés inclusifs (lun–ven), sans jours fériés."""
+    """Jours ouvrés inclusifs (lun–ven), sans jours fériés."""
     if d2 < d1:
         d1, d2 = d2, d1
     days = 0
     cur = d1
     while cur <= d2:
-        if cur.weekday() < 5:  # 0=Mon .. 6=Sun
+        if cur.weekday() < 5:
             days += 1
         cur += timedelta(days=1)
     return days
 
 def send_mail(to_addrs, subject, html, cc_addrs=None) -> bool:
-    """Envoi SMTP via Gmail (App Password)."""
+    """Envoi SMTP (Gmail App Password)."""
     host = _env("SMTP_HOST", "smtp.gmail.com")
     port = int(_env("SMTP_PORT", "587"))
     user = _env("SMTP_USER")
@@ -85,11 +87,7 @@ def send_mail(to_addrs, subject, html, cc_addrs=None) -> bool:
         return False
 
 def get_sheets_client():
-    """
-    Retourne un client gspread en utilisant :
-    - soit GOOGLE_SERVICE_ACCOUNT_JSON (contenu JSON),
-    - soit GOOGLE_APPLICATION_CREDENTIALS (chemin vers un fichier JSON sur le disque).
-    """
+    """Crée un client gspread à partir de GOOGLE_SERVICE_ACCOUNT_JSON ou GOOGLE_APPLICATION_CREDENTIALS."""
     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
     sa_json_text = _env("GOOGLE_SERVICE_ACCOUNT_JSON")
     sa_file_path = _env("GOOGLE_APPLICATION_CREDENTIALS")
@@ -108,7 +106,7 @@ SHEET_HEADERS = ["Timestamp", "Nom", "Email", "Début", "Fin", "Raison", "Jours"
 
 def write_decision_to_sheet(email:str, name:str, start_date:str, end_date:str,
                             reason:str, days:int, approver_email:str, status:str):
-    """Ajoute ou met à jour la ligne pour l'email donné dans Google Sheet."""
+    """Toujours AJOUTER une nouvelle ligne (ne jamais écraser)."""
     sheet_id = _env("SPREADSHEET_ID")
     if not sheet_id:
         app.logger.error("❌ SPREADSHEET_ID manquant")
@@ -118,32 +116,10 @@ def write_decision_to_sheet(email:str, name:str, start_date:str, end_date:str,
     sh = gc.open_by_key(sheet_id)
     ws = sh.sheet1
 
-    # Initialise l'entête si la feuille est vide
+    # Entêtes si vide
     values = ws.get_all_values()
     if not values:
         ws.append_row(SHEET_HEADERS)
-        values = [SHEET_HEADERS]
-
-    # Cherche une ligne existante pour cet email (colonne "Email")
-    try:
-        header = values[0]
-    except IndexError:
-        header = []
-    try:
-        email_idx = header.index("Email") + 1  # gspread est 1-based
-    except ValueError:
-        # Si les entêtes ne sont pas conformes, on les impose
-        ws.clear()
-        ws.append_row(SHEET_HEADERS)
-        email_idx = SHEET_HEADERS.index("Email") + 1
-        values = [SHEET_HEADERS]
-
-    # trouve la première ligne où la colonne Email == email
-    target_row = None
-    for i, row in enumerate(values[1:], start=2):  # ligne 1 = entêtes
-        if len(row) >= email_idx and row[email_idx - 1].strip().lower() == email.strip().lower():
-            target_row = i
-            break
 
     row_data = [
         datetime.utcnow().isoformat() + "Z",
@@ -157,22 +133,16 @@ def write_decision_to_sheet(email:str, name:str, start_date:str, end_date:str,
         "APPROUVÉ" if status == "approved" else "REFUSÉ",
     ]
 
-    if target_row:
-        # Met à jour toute la ligne (9 colonnes)
-        ws.update(f"A{target_row}:I{target_row}", [row_data])
-        app.logger.info(f"✅ Sheet updated row {target_row} for {email}")
-    else:
-        ws.append_row(row_data)
-        app.logger.info(f"✅ Sheet appended new row for {email}")
-
+    ws.append_row(row_data)
+    app.logger.info(f"✅ Sheet appended new row for {email}")
     return True
 
-# -----------------------------------------------------------------------------
-# Routes
-# -----------------------------------------------------------------------------
+
+# -------------------------------
+# Routes publiques
+# -------------------------------
 @app.route("/", methods=["GET"])
 def form():
-    from flask import Response
     html = render_template("form.html")
     return Response(html, status=200, mimetype="text/html; charset=utf-8")
 
@@ -223,9 +193,8 @@ def submit():
           <p>Vous recevrez un email dès décision.</p>
         """
         send_mail([email], "[Walton] Votre demande a été envoyée", ack, cc_addrs=cc)
-        from flask import Response
-    html = render_template("submitted.html", name=name, approver=approver_email, start=start_date, end=end_date, days=days)
-    return Response(html, status=200, mimetype="text/html; charset=utf-8")
+        html2 = render_template("submitted.html", name=name, approver=approver_email, start=start_date, end=end_date, days=days)
+        return Response(html2, status=200, mimetype="text/html; charset=utf-8")
     else:
         return "Erreur d'envoi email ❌ — vérifiez les logs.", 500
 
@@ -238,7 +207,7 @@ def decision():
     ed     = request.args.get("ed")
     reason = request.args.get("reason","")
 
-    # Recalcule les jours ouvrés à l’écriture
+    # Recalcule les jours ouvrés
     try:
         d1 = datetime.strptime(sd, "%Y-%m-%d").date()
         d2 = datetime.strptime(ed, "%Y-%m-%d").date()
@@ -246,18 +215,18 @@ def decision():
     except Exception:
         days = 0
 
-    # Écrit dans Google Sheet si approuvé
+    # Ecriture Google Sheet uniquement si approuvé
     if status == "approved":
-        approver_email = _env("EMAIL_MARK", "mw@walton.fr") if "mark" in (request.args.get("approver","") or "").lower() else None
-        # Si on n'a pas l'info "approver" en paramètre, note simplement l'email du décideur comme ALWAYS_CC
-        approver_email = approver_email or _env("ALWAYS_CC", "mw@walton.fr")
+        approver_email = _env("ALWAYS_CC", "mw@walton.fr")  # à défaut
         try:
-            write_decision_to_sheet(email=email, name=name, start_date=sd, end_date=ed,
-                                    reason=reason, days=days, approver_email=approver_email, status=status)
+            write_decision_to_sheet(
+                email=email, name=name, start_date=sd, end_date=ed,
+                reason=reason, days=days, approver_email=approver_email, status=status
+            )
         except Exception as e:
             app.logger.exception(f"❌ Sheet write failed: {e}")
 
-    # Notifie le demandeur de la décision
+    # Mail de décision
     note = f"approuvée ✅ ({days} jours ouvrés)" if status == "approved" else "refusée ❌"
     send_mail(
         [email],
@@ -265,53 +234,9 @@ def decision():
         f"<p>Bonjour {name},</p><p>Votre demande de congés {sd} → {ed} est {note}.</p>",
         cc_addrs=[_env("ALWAYS_CC", "mw@walton.fr")]
     )
-    from flask import Response
+
     html = render_template("decision_result.html", name=name, email=email, status=status, start=sd, end=ed, days=days)
     return Response(html, status=200, mimetype="text/html; charset=utf-8")
-
-# -----------------------------------------------------------------------------
-# Diagnostics
-# -----------------------------------------------------------------------------
-@app.get("/_smtp_test")
-def smtp_test():
-    """Teste l'envoi SMTP avec les variables d'environnement actuelles."""
-    to = _env("SMTP_USER")
-    ok = send_mail([to], "[Walton] SMTP Test", "<p>Test d'envoi réussi ✅</p>")
-    if ok:
-        return jsonify(ok=True, to=to)
-    return jsonify(ok=False, error="SMTP send failed (voir logs Render)"), 500
-
-@app.get("/_sheet_test")
-def sheet_test():
-    """Teste l'accès au Google Sheet et initialise l'entête si vide."""
-    try:
-        sheet_id = _env("SPREADSHEET_ID")
-        if not sheet_id:
-            return jsonify(ok=False, error="SPREADSHEET_ID manquant"), 400
-        gc = get_sheets_client()
-        sh = gc.open_by_key(sheet_id)
-        ws = sh.sheet1
-        vals = ws.get_all_values()
-        if not vals:
-            ws.append_row(SHEET_HEADERS)
-        return jsonify(ok=True, sheet=sh.title, rows=len(ws.get_all_values()))
-    except Exception as e:
-        app.logger.exception(e)
-        return jsonify(ok=False, error=str(e)), 500
-
-@app.route("/healthz")
-def health():
-    return "ok", 200
-
-@app.route("/ping")
-def ping():
-    return "pong", 200
-
-# -----------------------------------------------------------------------------
-# Entrée
-# -----------------------------------------------------------------------------
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(_env("PORT", "10000")))
 
 
 # -------------------------------
@@ -335,9 +260,7 @@ def check_auth(auth_header: str) -> bool:
 def require_auth(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
-        from flask import request
         if not check_auth(request.headers.get("Authorization")):
-            from flask import Response
             return Response("Authentication required", 401, {"WWW-Authenticate":"Basic realm=\"Walton Admin\""})
         return f(*args, **kwargs)
     return wrapper
@@ -351,30 +274,30 @@ def admin():
         gc = get_sheets_client()
         sh = gc.open_by_key(sheet_id)
         ws = sh.sheet1
-        rows = ws.get_all_values()  # list of lists
+        rows = ws.get_all_values()
         if not rows:
             rows = [SHEET_HEADERS]
         headers = rows[0]
         data = rows[1:]
 
-        # Trouve l'index de "Timestamp" si présent
         ts_idx = headers.index("Timestamp") if "Timestamp" in headers else None
 
-        # Trie par Timestamp desc (si dispo), sinon laisse l'ordre
         if ts_idx is not None:
             def parse_ts(v):
                 try:
                     return datetime.fromisoformat(v.replace("Z",""))
                 except Exception:
                     return datetime.min
-            data.sort(key=lambda r: parse_ts(r[ts_idx]) if len(r)>ts_idx else datetime.min, reverse=True)
+            data.sort(key=lambda r: parse_ts(r[ts_idx]) if len(r) > ts_idx else datetime.min, reverse=True)
 
-        # Rendu HTML minimal
         table_rows = []
         for r in data:
-            # complète à 9 colonnes si besoin
             r = (r + [""]*9)[:9]
-            table_rows.append(f"<tr><td>{r[0]}</td><td>{r[1]}</td><td>{r[2]}</td><td>{r[3]}</td><td>{r[4]}</td><td>{r[5]}</td><td style='text-align:right'>{r[6]}</td><td>{r[7]}</td><td>{r[8]}</td></tr>")
+            table_rows.append(
+                f"<tr><td>{r[0]}</td><td>{r[1]}</td><td>{r[2]}</td><td>{r[3]}</td>"
+                f"<td>{r[4]}</td><td>{r[5]}</td><td style='text-align:right'>{r[6]}</td>"
+                f"<td>{r[7]}</td><td>{r[8]}</td></tr>"
+            )
 
         html = f"""
         <!doctype html><html lang='fr'><head>
@@ -388,9 +311,6 @@ def admin():
             table{{width:100%;border-collapse:collapse}}
             th,td{{padding:10px;border-bottom:1px solid #eee;font-size:14px}}
             th{{text-align:left;background:#fafafa}}
-            .badge{{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px}}
-            .ok{{background:#DCFCE7;color:#166534}}
-            .no{{background:#FEE2E2;color:#991B1B}}
           </style>
         </head><body>
           <div class='container'>
@@ -413,3 +333,49 @@ def admin():
     except Exception as e:
         app.logger.exception(e)
         return jsonify(ok=False, error=str(e)), 500
+
+
+# -------------------------------
+# Diagnostics
+# -------------------------------
+@app.get("/_smtp_test")
+def smtp_test():
+    """Test envoi SMTP."""
+    to = _env("SMTP_USER")
+    ok = send_mail([to], "[Walton] SMTP Test", "<p>Test d'envoi réussi ✅</p>")
+    if ok:
+        return jsonify(ok=True, to=to)
+    return jsonify(ok=False, error="SMTP send failed (voir logs Render)"), 500
+
+@app.get("/_sheet_test")
+def sheet_test():
+    """Test accès Google Sheet + init entête si vide."""
+    try:
+        sheet_id = _env("SPREADSHEET_ID")
+        if not sheet_id:
+            return jsonify(ok=False, error="SPREADSHEET_ID manquant"), 400
+        gc = get_sheets_client()
+        sh = gc.open_by_key(sheet_id)
+        ws = sh.sheet1
+        vals = ws.get_all_values()
+        if not vals:
+            ws.append_row(SHEET_HEADERS)
+        return jsonify(ok=True, sheet=sh.title, rows=len(ws.get_all_values()))
+    except Exception as e:
+        app.logger.exception(e)
+        return jsonify(ok=False, error=str(e)), 500
+
+@app.route("/healthz")
+def health():
+    return "ok", 200
+
+@app.route("/ping")
+def ping():
+    return "pong", 200
+
+
+# -------------------------------
+# Run
+# -------------------------------
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(_env("PORT", "10000")))
