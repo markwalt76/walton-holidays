@@ -142,3 +142,38 @@ def health():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+
+# --- TEST SMTP: /_smtp_test ---
+import os, smtplib, ssl
+from email.message import EmailMessage
+from flask import jsonify
+
+def _smtp_send(to, subject, html):
+    host = os.getenv("SMTP_HOST", "smtp.gmail.com")
+    port = int(os.getenv("SMTP_PORT", "587"))
+    user = os.getenv("SMTP_USER")
+    pwd  = os.getenv("SMTP_PASSWORD")
+    mail_from = os.getenv("MAIL_FROM", user or "")
+
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = mail_from if mail_from else user
+    msg["To"] = to
+    msg.set_content("HTML")
+    msg.add_alternative(html, subtype="html")
+
+    with smtplib.SMTP(host, port, timeout=30) as s:
+        s.ehlo()
+        s.starttls(context=ssl.create_default_context())
+        s.login(user, pwd)
+        s.send_message(msg)
+
+@app.route("/_smtp_test", methods=["GET"])
+def smtp_test():
+    to = os.getenv("SMTP_USER")
+    try:
+        _smtp_send(to, "[Walton] SMTP Test", "<p>Test d'envoi réussi ✅</p>")
+        return jsonify(ok=True, to=to)
+    except Exception as e:
+        app.logger.exception(f"SMTP test failed: {e}")
+        return jsonify(ok=False, error=str(e)), 500
