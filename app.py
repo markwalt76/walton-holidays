@@ -19,13 +19,15 @@ TEMPLATE_DIR = os.path.join(BASE_DIR, "templates")
 app = Flask(__name__, template_folder=TEMPLATE_DIR)
 
 # -------------------------------
-# Approvers (via ENV overrides)
+# Approvers (override via ENV)
 # -------------------------------
 APPROVERS = {
     "mark": os.environ.get("EMAIL_MARK", "mw@walton.fr"),
     "nhan": os.environ.get("EMAIL_NHAN", "nhan@walton.fr"),
     "anh":  os.environ.get("EMAIL_ANH",  "anh@walton.fr"),
 }
+
+BRAND = "Walton Time Off"
 
 # -------------------------------
 # Helpers
@@ -35,7 +37,8 @@ def _env(key, default=None):
 
 def business_days(d1: date, d2: date) -> int:
     """
-    Business days inclusive (Mon–Fri). If start == end, force 1 day.
+    Inclusive business days (Mon–Fri).
+    If start == end, force 1 day.
     If end < start, return -1 (invalid).
     """
     if d2 < d1:
@@ -176,7 +179,7 @@ def submit():
     reject_link  = f"{base_url}/decision?status=rejected&email={email}&name={name}&sd={start_date}&ed={end_date}&reason={reason}"
 
     html = (
-        "<h2>New time off request</h2>"
+        f"<h2>New time off request</h2>"
         f"<p><b>Employee:</b> {name} &lt;{email}&gt;</p>"
         f"<p><b>Period:</b> {start_date} → {end_date} ({days} business day(s))</p>"
         f"<p><b>Reason:</b><br>{(reason or '—').replace('\n','<br>')}</p>"
@@ -188,7 +191,7 @@ def submit():
     )
 
     cc = [_env("ALWAYS_CC", "mw@walton.fr")]
-    ok = send_mail([approver_email], f"[Walton] Time off request — {name}", html, cc_addrs=cc)
+    ok = send_mail([approver_email], f"[{BRAND}] Time off request — {name}", html, cc_addrs=cc)
 
     if ok:
         ack = (
@@ -196,7 +199,7 @@ def submit():
             f"<p>Your request ({start_date} → {end_date}, {days} business day(s)) has been sent to {approver_email}.</p>"
             "<p>You will receive an email once a decision is made.</p>"
         )
-        send_mail([email], "[Walton] Your request was sent", ack, cc_addrs=cc)
+        send_mail([email], f"[{BRAND}] Your request was sent", ack, cc_addrs=cc)
         html2 = render_template(
             "submitted.html",
             name=name,
@@ -248,7 +251,7 @@ def decision():
     note = f"approved ✅ ({days} business day(s))" if status == "approved" else "rejected ❌"
     send_mail(
         [email],
-        f"[Walton] Decision — {status}",
+        f"[{BRAND}] Decision — {status}",
         f"<p>Hello {name},</p><p>Your time off request {sd} → {ed} is {note}.</p>",
         cc_addrs=[_env("ALWAYS_CC", "mw@walton.fr")]
     )
@@ -324,7 +327,7 @@ def admin():
         <!doctype html><html lang='en'><head>
           <meta charset='utf-8'>
           <meta name='viewport' content='width=device-width, initial-scale=1'>
-          <title>Admin - Walton Holidays</title>
+          <title>Admin - {BRAND}</title>
           <style>
             body{{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0;background:#f7f7fb}}
             .container{{max-width:1100px;margin:24px auto;background:#fff;border-radius:12px;padding:24px;box-shadow:0 6px 24px rgba(0,0,0,.06)}}
@@ -353,7 +356,7 @@ def admin():
         return Response(html, status=200, mimetype="text/html; charset=utf-8")
     except Exception as e:
         app.logger.exception(e)
-        return jsonify(ok=False, error=str(e)), 500
+        return jsonify(ok=False, error=str(e)), 500)
 
 # -------------------------------
 # Diagnostics
@@ -362,7 +365,7 @@ def admin():
 def smtp_test():
     """SMTP test."""
     to = _env("SMTP_USER")
-    ok = send_mail([to], "[Walton] SMTP Test", "<p>SMTP test OK ✅</p>")
+    ok = send_mail([to], f"[{BRAND}] SMTP Test", "<p>SMTP test OK ✅</p>")
     if ok:
         return jsonify(ok=True, to=to)
     return jsonify(ok=False, error="SMTP send failed (see logs)"), 500
