@@ -46,8 +46,10 @@
 <body>
   <div class="card">
     <div class="header">
-      <img src="/waltonlogo_red1.jpg" alt="Walton logo" class="logo">
-      <strong>Walton Time Off</strong>
+      <!-- Logo only, no extra text -->
+      <img src="{{ url_for('static', filename='waltonlogo_red1.jpg') }}"
+           alt="Walton logo"
+           class="logo">
     </div>
 
     <h1>Time Off Request</h1>
