@@ -5,7 +5,7 @@ import ssl
 from email.message import EmailMessage
 from datetime import datetime, date, timedelta
 
-from flask import Flask, render_template, request, jsonify, Response
+from flask import Flask, render_template, request, jsonify, Response, send_from_directory
 
 # Google Sheets
 import gspread
@@ -17,6 +17,11 @@ from google.oauth2.service_account import Credentials
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TEMPLATE_DIR = os.path.join(BASE_DIR, "templates")
 app = Flask(__name__, template_folder=TEMPLATE_DIR)
+
+# Serve logo from project root
+@app.route('/WaltonLogo_Trans.png')
+def walton_logo():
+    return send_from_directory('.', 'WaltonLogo_Trans.png')
 
 # -------------------------------
 # Approvers (override via ENV)
@@ -356,7 +361,7 @@ def admin():
         return Response(html, status=200, mimetype="text/html; charset=utf-8")
     except Exception as e:
         app.logger.exception(e)
-        return jsonify(ok=False, error=str(e)), 500  # ← fixed (no extra ')')
+        return jsonify(ok=False, error=str(e)), 500
 
 # -------------------------------
 # Diagnostics
