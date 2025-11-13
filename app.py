@@ -143,11 +143,16 @@ def submit():
     except Exception:
         return Response("Invalid date format", 400)
 
-    days = business_days(d1, d2)
+      days = business_days(d1, d2)
     if days == -1:
         return Response("End date cannot be before start date.", 400)
 
+    # Half day ONLY if same start/end date
+    if duration_type == "half" and d1 != d2:
+        return Response("Half day can only be used when start and end dates are the same.", 400)
+
     days = adjust_half_day(days, duration_type)
+
 
     # Build approval links
     approve_link = (
@@ -238,22 +243,47 @@ def decision():
         days = 1.0
 
     # Append decision in Sheet (simple, non-destructive)
+       # Update last pending row in Google Sheet (instead of always appending)
     try:
         sheet = get_sheet()
-        sheet.append_row([
-            datetime.utcnow().isoformat(timespec="seconds") + "Z",
-            name,
-            email,
-            "DECISION",
-            sd,
-            ed,
-            days,
-            duration_type,
-            reason,
-            status.capitalize(),
-        ])
+        values = sheet.get_all_values()
+
+        # We expect rows like:
+        # [Timestamp, Name, Email, Approver, Start, End, Days, DurationType, Reason, Status]
+        last_pending_row_idx = None
+        for idx in range(len(values) - 1, 0, -1):  # from bottom to top (skip header at 0)
+            row = values[idx]
+            if len(row) < 10:
+                continue
+            row_email = row[2]
+            row_start = row[4]
+            row_end   = row[5]
+            row_status = row[9]
+            if row_email == email and row_start == sd and row_end == ed and row_status == "Pending":
+                last_pending_row_idx = idx + 1  # gspread rows are 1-based
+                break
+
+        if last_pending_row_idx is not None:
+            # Update the Status cell to Approved / Rejected
+            sheet.update_cell(last_pending_row_idx, 10, status.capitalize())
+        else:
+            # If no pending row found, append a fallback row
+            sheet.append_row([
+                datetime.utcnow().isoformat(timespec="seconds") + "Z",
+                name,
+                email,
+                "DECISION",
+                sd,
+                ed,
+                days,
+                duration_type,
+                reason,
+                status.capitalize(),
+            ])
+
     except Exception as e:
         print("Error writing decision to sheet:", e)
+
 
     # Email to requester
     decision_text = "approved ✅" if status == "approved" else "rejected ❌"

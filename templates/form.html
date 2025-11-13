@@ -30,18 +30,33 @@
     }
     small{color:#444}
   </style>
-  <script>
-    function validateForm(e){
-      const start=new Date(document.querySelector("[name=start_date]").value);
-      const end=new Date(document.querySelector("[name=end_date]").value);
-      if(end<start){
-        alert("End date cannot be before start date.");
-        e.preventDefault();
-        return false;
-      }
-      return true;
+ <script>
+  function validateForm(e){
+    const startInput = document.querySelector("[name=start_date]");
+    const endInput   = document.querySelector("[name=end_date]");
+    const duration   = document.querySelector("[name=duration_type]");
+
+    const start = new Date(startInput.value);
+    const end   = new Date(endInput.value);
+
+    if (end < start) {
+      alert("End date cannot be before start date.");
+      e.preventDefault();
+      return false;
     }
-  </script>
+
+    // Half day only allowed when same date
+    if (duration.value === "half" && startInput.value !== endInput.value) {
+      alert("Half day can only be selected when start and end dates are the same.");
+      e.preventDefault();
+      return false;
+    }
+
+    return true;
+  }
+</script>
+
+
 </head>
 <body>
   <div class="card">
