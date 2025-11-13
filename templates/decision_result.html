@@ -10,7 +10,10 @@
       margin:0;padding:24px;min-height:100vh;
       background:linear-gradient(135deg,#d32f2f 0%,#b71c1c 100%);
     }
-    .card{max-width:600px;margin:0 auto;background:#fff;border-radius:12px;padding:24px;box-shadow:0 6px 24px rgba(0,0,0,.18);}
+    .card{
+      max-width:600px;margin:0 auto;background:#fff;border-radius:12px;
+      padding:24px;box-shadow:0 6px 24px rgba(0,0,0,.18);
+    }
     .header{display:flex;align-items:center;gap:10px;margin-bottom:12px;}
     .logo{height:40px}
     .approved{color:#16a34a;font-weight:600}
@@ -20,9 +23,10 @@
 <body>
   <div class="card">
     <div class="header">
-      <img src="/WaltonLogo_Trans.png" alt="Walton logo" class="logo">
+      <img src="/waltonlogo_red1.jpg" alt="Walton logo" class="logo">
       <strong>Walton Time Off</strong>
     </div>
+
     <h2>Decision recorded</h2>
     <p>Employee: <b>{{ name }}</b> ({{ email }})</p>
     <p>Period: {{ start }} → {{ end }}</p>
