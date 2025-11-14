@@ -3,6 +3,7 @@ import json
 import smtplib
 from email.message import EmailMessage
 from datetime import datetime, date, timedelta
+from urllib.parse import quote_plus
 
 from flask import (
     Flask, render_template, request, jsonify,
@@ -201,7 +202,7 @@ def submit():
     sheet = get_sheet()
     timestamp = datetime.utcnow().isoformat()
 
-    row = [
+        row = [
         timestamp,
         employee_name,
         employee_email,
@@ -218,16 +219,43 @@ def submit():
     # -------------------------
     # Send notification emails
     # -------------------------
+      # -------------------------
+    # Send notification emails
+    # -------------------------
     try:
         # Déterminer l'email de l'approbateur
         approver_email_map = {
             "Mark": EMAIL_MARK,
             "Nhàn": EMAIL_NHAN,
+            "Nhan": EMAIL_NHAN,
             "Anh": EMAIL_ANH,
         }
         approver_email = approver_email_map.get(approver, EMAIL_MARK)
 
-        # 1) Email à l'approbateur avec un résumé
+        # Construire les liens Approve / Reject
+        approve_link = (
+            f"{BASE_URL}/decision"
+            f"?status=approved"
+            f"&email={quote_plus(employee_email)}"
+            f"&name={quote_plus(employee_name)}"
+            f"&sd={start_str}"
+            f"&ed={end_str}"
+            f"&reason={quote_plus(reason)}"
+            f"&dt={duration_type}"
+        )
+
+        reject_link = (
+            f"{BASE_URL}/decision"
+            f"?status=rejected"
+            f"&email={quote_plus(employee_email)}"
+            f"&name={quote_plus(employee_name)}"
+            f"&sd={start_str}"
+            f"&ed={end_str}"
+            f"&reason={quote_plus(reason)}"
+            f"&dt={duration_type}"
+        )
+
+        # 1) Email à l'approbateur avec les liens
         approver_body = f"""
         <p>Hello {approver},</p>
         <p>You have a new time off request:</p>
@@ -239,7 +267,10 @@ def submit():
           <li><b>Type of leave</b>: {type_of_leave}</li>
           <li><b>Reason</b>: {reason or "—"}</li>
         </ul>
-        <p>You can approve or reject this request from your usual admin links.</p>
+        <p>
+          <a href="{approve_link}">✅ Approve</a> |
+          <a href="{reject_link}">❌ Reject</a>
+        </p>
         """
 
         send_email(
@@ -278,6 +309,7 @@ def submit():
     except Exception as e:
         print("EMAIL ERROR in /submit:", e)
         # On ne casse pas la réponse utilisateur, on log juste l'erreur
+
 
 
     # Email, etc. → tu peux garder ton code existant ici
