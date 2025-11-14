@@ -18,7 +18,7 @@
     .logo{height:40px}
     h1{margin:0 0 12px}
     label{display:block;margin:12px 0 6px}
-    input,textarea{
+    input,select,textarea{
       width:100%;padding:12px;border:1px solid #ddd;border-radius:10px;
       font-size:16px;background:#fff;
     }
@@ -30,18 +30,10 @@
     }
     small{color:#444}
     .option-group{
-      display:flex;
-      flex-direction:column;
-      gap:6px;
-      margin-bottom:8px;
+      display:flex;flex-direction:column;gap:6px;margin-bottom:8px;
     }
     .option-group label{
-      display:flex;
-      align-items:center;
-      gap:8px;
-      margin:0;
-      font-size:15px;
-      cursor:pointer;
+      display:flex;align-items:center;gap:8px;margin:0;font-size:15px;cursor:pointer;
     }
     .option-group input[type="radio"]{ width:auto; }
   </style>
@@ -59,7 +51,7 @@
       }
 
       if(duration === "half" && start !== end){
-        alert("Half-day is allowed only if start date and end date are the same.");
+        alert("Half day is allowed only if start and end dates are the same.");
         e.preventDefault();
         return false;
       }
@@ -71,18 +63,21 @@
   <div class="card">
 
     <div class="header">
-      <img src="{{ url_for('static', filename='waltonlogo_red1.jpg') }}" class="logo">
+      <img src="{{ url_for('static', filename='waltonlogo_red1.jpg') }}" class="logo" alt="Walton logo">
     </div>
 
     <h1>Time Off Request</h1>
 
     <form method="post" action="/submit" onsubmit="validateForm(event)">
 
-      <label>Full name</label>
-      <input type="text" name="name" required>
-
-      <label>Email</label>
-      <input type="email" name="email" required>
+      <!-- Employee list from Staff List sheet -->
+      <label>Employee</label>
+      <select name="employee_name" required>
+        <option value="">-- Select your name --</option>
+        {% for person in staff %}
+          <option value="{{ person.name }}">{{ person.name }}</option>
+        {% endfor %}
+      </select>
 
       <label>Submit to</label>
       <div class="option-group">
@@ -108,7 +103,16 @@
         <label><input type="radio" name="duration_type" value="half"> Half day (0.5)</label>
       </div>
 
-      <label>Reason (optional)</label>
+      <label>Type of leave</label>
+      <div class="option-group">
+        <label><input type="radio" name="type_of_leave" value="Vacation / Annual Paid Leave" required> Vacation / Annual Paid Leave</label>
+        <label><input type="radio" name="type_of_leave" value="Maternity Leave"> Maternity Leave</label>
+        <label><input type="radio" name="type_of_leave" value="Sick Leave"> Sick Leave</label>
+        <label><input type="radio" name="type_of_leave" value="Leave Without Pay"> Leave without pay</label>
+        <label><input type="radio" name="type_of_leave" value="Work From Home"> Work from home</label>
+      </div>
+
+      <label>Comments (optional)</label>
       <textarea name="reason"></textarea>
 
       <button type="submit">Submit request</button>
