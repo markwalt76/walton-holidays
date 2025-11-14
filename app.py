@@ -201,6 +201,71 @@ def submit():
         "Pending",
     ]
     sheet.append_row(row)
+    # -------------------------
+    # Send notification emails
+    # -------------------------
+    try:
+        # Déterminer l'email de l'approbateur
+        approver_email_map = {
+            "Mark": EMAIL_MARK,
+            "Nhàn": EMAIL_NHAN,
+            "Nhan": EMAIL_NHAN,
+            "Anh": EMAIL_ANH,
+        }
+        approver_email = approver_email_map.get(approver, EMAIL_MARK)
+
+        # 1) Email à l'approbateur avec un résumé
+        approver_body = f"""
+        <p>Hello {approver},</p>
+        <p>You have a new time off request:</p>
+        <ul>
+          <li><b>Employee</b>: {employee_name} ({employee_email})</li>
+          <li><b>Dates</b>: {start_str} → {end_str}</li>
+          <li><b>Days</b>: {days}</li>
+          <li><b>Duration</b>: {duration_type}</li>
+          <li><b>Type of leave</b>: {type_of_leave}</li>
+          <li><b>Reason</b>: {reason or "—"}</li>
+        </ul>
+        <p>You can approve or reject this request from your usual admin links.</p>
+        """
+
+        send_email(
+            subject="Walton Time Off – New request",
+            to_list=[approver_email],
+            body_html=approver_body,
+        )
+
+        # 2) Email de confirmation à l'employé
+        employee_body = f"""
+        <p>Hello {employee_name},</p>
+        <p>Your time off request has been received.</p>
+        <ul>
+          <li><b>Dates</b>: {start_str} → {end_str}</li>
+          <li><b>Days</b>: {days}</li>
+          <li><b>Duration</b>: {duration_type}</li>
+          <li><b>Type of leave</b>: {type_of_leave}</li>
+        </ul>
+        <p>You will receive an update once a decision is made.</p>
+        """
+
+        send_email(
+            subject="Walton Time Off – Request received",
+            to_list=[employee_email],
+            body_html=employee_body,
+        )
+
+        # 3) Copie systématique à ALWAYS_CC (si défini)
+        if ALWAYS_CC:
+            send_email(
+                subject="Walton Time Off – Copy of request",
+                to_list=[ALWAYS_CC],
+                body_html=approver_body,
+            )
+
+    except Exception as e:
+        print("EMAIL ERROR in /submit:", e)
+        # On ne casse pas la réponse utilisateur, on log juste l'erreur
+
 
     # Email, etc. → tu peux garder ton code existant ici
 
