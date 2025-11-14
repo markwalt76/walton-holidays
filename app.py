@@ -65,6 +65,37 @@ def get_sheet():
     client = gspread.authorize(creds)
     return client.open_by_key(SPREADSHEET_ID).sheet1
 
+def get_staff_sheet():
+    """
+    Return the 'Staff List' worksheet (must exist in the same spreadsheet).
+    Columns: Name | Email
+    """
+    sh = get_sheet().spreadsheet  # on récupère le classeur déjà utilisé
+    try:
+        ws = sh.worksheet("Staff List")
+    except gspread.WorksheetNotFound:
+        # Si la feuille n’existe pas, on la crée avec les colonnes
+        ws = sh.add_worksheet(title="Staff List", rows=100, cols=2)
+        ws.append_row(["Name", "Email"])
+    return ws
+
+
+def load_staff_list():
+    """
+    Returns a list of dicts: [{"name": ..., "email": ...}, ...]
+    pulled from 'Staff List' sheet.
+    """
+    ws = get_staff_sheet()
+    records = ws.get_all_records()  # lit toutes les lignes sous l’en-tête
+    staff = []
+    for row in records:
+        name = row.get("Name") or row.get("name")
+        email = row.get("Email") or row.get("email")
+        if name and email:
+            staff.append({"name": name, "email": email})
+    return staff
+
+
 
 # -----------------------------------------------------------------------------
 # BUSINESS DAYS
@@ -115,105 +146,72 @@ def send_email(subject: str, to_list, body_html: str, cc_list=None):
 # -----------------------------------------------------------------------------
 # ROUTES
 # -----------------------------------------------------------------------------
-@app.route("/")
+@app.route("/", methods=["GET"])
 def index():
-    return render_template("form.html")
+    staff = load_staff_list()
+    return render_template("form.html", staff=staff)
+
 
 
 # -----------------------------------------------------------------------------
 @app.route("/submit", methods=["POST"])
 def submit():
-    name = request.form.get("name", "").strip()
-    email = request.form.get("email", "").strip()
-    approver_k = request.form.get("approver")
-    start_date = request.form.get("start_date")
-    end_date = request.form.get("end_date")
-    reason = request.form.get("reason", "").strip()
-    duration_type = request.form.get("duration_type", "full")
+    form = request.form
 
-    if not (name and email and approver_k and start_date and end_date):
-        return Response("Missing fields", 400)
+    employee_name = form.get("employee_name")  # vient de la liste déroulante
+    approver      = form.get("approver")
+    start_str     = form.get("start_date")
+    end_str       = form.get("end_date")
+    duration_type = form.get("duration_type")  # "full" ou "half"
+    type_of_leave = form.get("type_of_leave")  # nouvelle info
+    reason        = form.get("reason", "").strip()
 
-    approver_email = APPROVER_EMAILS.get(approver_k, EMAIL_MARK)
-    approver_label = APPROVER_LABELS.get(approver_k, approver_k)
+    # On recalcule l’email à partir de la Staff List (sécurité)
+    staff = {m["name"]: m["email"] for m in load_staff_list()}
+    employee_email = staff.get(employee_name)
 
-    # Parse dates
-    try:
-        d1 = datetime.strptime(start_date, "%Y-%m-%d").date()
-        d2 = datetime.strptime(end_date, "%Y-%m-%d").date()
-    except Exception:
-        return Response("Invalid date format", 400)
+    if not employee_email:
+        # fallback si problème dans la liste (optionnel)
+        return "Employee email not found in Staff List", 400
 
+    # Convertir les dates + calcul du nombre de jours ouvrés (ton code existant)
+    d1 = datetime.strptime(start_str, "%Y-%m-%d").date()
+    d2 = datetime.strptime(end_str, "%Y-%m-%d").date()
     days = business_days(d1, d2)
-    if days == -1:
-        return Response("End date cannot be before start date.", 400)
 
-    # Half day – only allowed if same start/end
-    if duration_type == "half" and d1 != d2:
-        return Response("Half day allowed only when start and end dates match.", 400)
+    # Half-day → 0.5
+    if duration_type == "half":
+        days = 0.5
 
-    days = adjust_half_day(days, duration_type)
+    # Ajout de la ligne dans le Google Sheet 'Requests'
+    sheet = get_sheet()
+    timestamp = datetime.utcnow().isoformat()
 
-    # Build approve/reject links
-    approve_link = (
-        f"{BASE_URL}/decision?status=approved&email={email}"
-        f"&name={name}&sd={start_date}&ed={end_date}&reason={reason}"
-        f"&dt={duration_type}"
-    )
-    reject_link = (
-        f"{BASE_URL}/decision?status=rejected&email={email}"
-        f"&name={name}&sd={start_date}&ed={end_date}&reason={reason}"
-        f"&dt={duration_type}"
-    )
+    row = [
+        timestamp,
+        employee_name,
+        employee_email,
+        approver,
+        start_str,
+        end_str,
+        days,
+        duration_type,
+        type_of_leave,
+        reason,
+        "Pending",
+    ]
+    sheet.append_row(row)
 
-    # Email approver
-    html = f"""
-    <p>New time off request:</p>
-    <ul>
-      <li><b>Name:</b> {name}</li>
-      <li><b>Email:</b> {email}</li>
-      <li><b>Period:</b> {start_date} → {end_date}</li>
-      <li><b>Duration:</b> {days} business day(s)</li>
-      <li><b>Reason:</b> {reason or "—"}</li>
-    </ul>
-    <p>
-      <a href="{approve_link}">✅ Approve</a> |
-      <a href="{reject_link}">❌ Reject</a>
-    </p>
-    """
-
-    send_email(
-        subject=f"Time off request – {name}",
-        to_list=[approver_email],
-        body_html=html,
-        cc_list=[ALWAYS_CC] if ALWAYS_CC else None,
-    )
-
-    # Write to sheet (Pending)
-    try:
-        sheet = get_sheet()
-        sheet.append_row([
-            datetime.utcnow().isoformat(timespec="seconds"),
-            name,           # Name
-            email,          # Email
-            approver_label, # Approver (Mark / Nhàn / Anh)
-            start_date,
-            end_date,
-            days,
-            duration_type,
-            reason,
-            "Pending",      # Status
-        ])
-    except Exception as e:
-        print("Sheet error on submit:", e)
+    # Email, etc. → tu peux garder ton code existant ici
 
     return render_template(
         "submitted.html",
-        approver=approver_label,
-        start=start_date,
-        end=end_date,
+        approver=approver,
+        start=start_str,
+        end=end_str,
         days=days,
     )
+
 
 
 # -----------------------------------------------------------------------------
@@ -324,16 +322,10 @@ def smtp_test():
         return jsonify(ok=False, error=str(e)), 500
 @app.route("/admin/reset-sheet", methods=["GET"])
 def reset_sheet():
-    """
-    Clear the Google Sheet and recreate the header row.
-    """
     try:
         sheet = get_sheet()
-
-        # Efface tout le contenu de la feuille
         sheet.clear()
 
-        # Recrée la première ligne d’en-tête
         header = [
             "Timestamp",
             "Name",
@@ -343,8 +335,9 @@ def reset_sheet():
             "End",
             "Days",
             "Duration",
+            "Type of leave",
             "Reason",
-            "Status"
+            "Status",
         ]
         sheet.append_row(header)
 
@@ -352,6 +345,7 @@ def reset_sheet():
     except Exception as e:
         print("reset-sheet error:", e)
         return jsonify(ok=False, error=str(e)), 500
+
 
 
 
