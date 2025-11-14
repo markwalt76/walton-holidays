@@ -2,35 +2,38 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Walton Time Off - Request Sent</title>
+  <title>Walton Time Off - Sent</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     body{
       font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
       margin:0;padding:24px;min-height:100vh;
-      background:linear-gradient(135deg,#d32f2f 0%,#b71c1c 100%);
+      background:linear-gradient(135deg,#d32f2f,#b71c1c);
     }
     .card{
       max-width:600px;margin:0 auto;background:#fff;border-radius:12px;
       padding:24px;box-shadow:0 6px 24px rgba(0,0,0,.18);
     }
-    .header{display:flex;align-items:center;gap:10px;margin-bottom:12px;}
+    .header{display:flex;align-items:center;margin-bottom:12px;}
     .logo{height:40px}
   </style>
 </head>
+
 <body>
   <div class="card">
+
     <div class="header">
-      <img src="{{ url_for('static', filename='waltonlogo_red1.jpg') }}"
-           alt="Walton logo"
-           class="logo">
+      <img src="{{ url_for('static', filename='waltonlogo_red1.jpg') }}" class="logo">
     </div>
 
     <h2>Thank you!</h2>
-    <p>Your time off request has been sent to <b>{{ approver }}</b>.</p>
+    <p>Your time-off request has been sent to <b>{{ approver }}</b>.</p>
+
     <p><b>Dates:</b> {{ start }} → {{ end }}</p>
-    <p><b>Duration:</b> {{ days }} business day(s).</p>
-    <p>You’ll receive an email once it’s reviewed.</p>
+    <p><b>Duration:</b> {{ days }} business day(s)</p>
+
+    <p>You will receive an email once a decision is taken.</p>
+
   </div>
 </body>
 </html>
