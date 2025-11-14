@@ -122,6 +122,11 @@ def adjust_half_day(days: float, duration_type: str) -> float:
 # EMAIL SENDER
 # -----------------------------------------------------------------------------
 def send_email(subject: str, to_list, body_html: str, cc_list=None):
+    # Vérifier la config SMTP
+    if not SMTP_USER or not SMTP_PASSWORD:
+        raise RuntimeError("SMTP configuration missing")
+
+    # Normaliser les listes
     if isinstance(to_list, str):
         to_list = [to_list]
     if cc_list is None:
@@ -129,18 +134,27 @@ def send_email(subject: str, to_list, body_html: str, cc_list=None):
     elif isinstance(cc_list, str):
         cc_list = [cc_list]
 
+    # Filtrer les adresses vides / None
+    to_list = [str(addr).strip() for addr in to_list if addr]
+    cc_list = [str(addr).strip() for addr in cc_list if addr]
+
+    if not to_list:
+        raise RuntimeError("No valid recipient email in to_list")
+
     msg = EmailMessage()
     msg["Subject"] = subject
     msg["From"] = MAIL_FROM
     msg["To"] = ", ".join(to_list)
     if cc_list:
         msg["Cc"] = ", ".join(cc_list)
+    msg.set_content("HTML only")
     msg.add_alternative(body_html, subtype="html")
 
     with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as s:
         s.starttls()
         s.login(SMTP_USER, SMTP_PASSWORD)
         s.send_message(msg)
+
 
 
 # -----------------------------------------------------------------------------
@@ -209,7 +223,6 @@ def submit():
         approver_email_map = {
             "Mark": EMAIL_MARK,
             "Nhàn": EMAIL_NHAN,
-            "Nhan": EMAIL_NHAN,
             "Anh": EMAIL_ANH,
         }
         approver_email = approver_email_map.get(approver, EMAIL_MARK)
