@@ -6,7 +6,7 @@ from datetime import datetime, date, timedelta
 
 from flask import (
     Flask, render_template, request, jsonify,
-    Response, url_for
+    Response
 )
 
 import gspread
@@ -36,6 +36,18 @@ BASE_URL = os.getenv("BASE_URL", "https://walton-holidays.onrender.com")
 SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
 GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
 
+APPROVER_EMAILS = {
+    "mark": EMAIL_MARK,
+    "nhan": EMAIL_NHAN,
+    "anh": EMAIL_ANH,
+}
+
+APPROVER_LABELS = {
+    "mark": "Mark",
+    "nhan": "Nhàn",
+    "anh": "Anh",
+}
+
 
 # -----------------------------------------------------------------------------
 # GOOGLE SHEET
@@ -63,7 +75,7 @@ def business_days(start: date, end: date) -> float:
     days = 0
     cur = start
     while cur <= end:
-        if cur.weekday() < 5:
+        if cur.weekday() < 5:  # Monday–Friday
             days += 1
         cur += timedelta(days=1)
     return float(days)
@@ -122,17 +134,14 @@ def submit():
     if not (name and email and approver_k and start_date and end_date):
         return Response("Missing fields", 400)
 
-    approver_email = {
-        "mark": EMAIL_MARK,
-        "nhan": EMAIL_NHAN,
-        "anh": EMAIL_ANH,
-    }.get(approver_k, EMAIL_MARK)
+    approver_email = APPROVER_EMAILS.get(approver_k, EMAIL_MARK)
+    approver_label = APPROVER_LABELS.get(approver_k, approver_k)
 
     # Parse dates
     try:
         d1 = datetime.strptime(start_date, "%Y-%m-%d").date()
         d2 = datetime.strptime(end_date, "%Y-%m-%d").date()
-    except:
+    except Exception:
         return Response("Invalid date format", 400)
 
     days = business_days(d1, d2)
@@ -145,13 +154,12 @@ def submit():
 
     days = adjust_half_day(days, duration_type)
 
-    # Build links
+    # Build approve/reject links
     approve_link = (
         f"{BASE_URL}/decision?status=approved&email={email}"
         f"&name={name}&sd={start_date}&ed={end_date}&reason={reason}"
         f"&dt={duration_type}"
     )
-
     reject_link = (
         f"{BASE_URL}/decision?status=rejected&email={email}"
         f"&name={name}&sd={start_date}&ed={end_date}&reason={reason}"
@@ -160,7 +168,7 @@ def submit():
 
     # Email approver
     html = f"""
-    <p>New request:</p>
+    <p>New time off request:</p>
     <ul>
       <li><b>Name:</b> {name}</li>
       <li><b>Email:</b> {email}</li>
@@ -169,8 +177,8 @@ def submit():
       <li><b>Reason:</b> {reason or "—"}</li>
     </ul>
     <p>
-      <a href="{approve_link}">Approve</a> |
-      <a href="{reject_link}">Reject</a>
+      <a href="{approve_link}">✅ Approve</a> |
+      <a href="{reject_link}">❌ Reject</a>
     </p>
     """
 
@@ -178,25 +186,30 @@ def submit():
         subject=f"Time off request – {name}",
         to_list=[approver_email],
         body_html=html,
-        cc_list=[ALWAYS_CC],
+        cc_list=[ALWAYS_CC] if ALWAYS_CC else None,
     )
 
-    # Write sheet
+    # Write to sheet (Pending)
     try:
         sheet = get_sheet()
         sheet.append_row([
             datetime.utcnow().isoformat(timespec="seconds"),
-            name, email, approver_k,
-            start_date, end_date,
-            days, duration_type,
-            reason, "Pending"
+            name,           # Name
+            email,          # Email
+            approver_label, # Approver (Mark / Nhàn / Anh)
+            start_date,
+            end_date,
+            days,
+            duration_type,
+            reason,
+            "Pending",      # Status
         ])
     except Exception as e:
-        print("Sheet error:", e)
+        print("Sheet error on submit:", e)
 
     return render_template(
         "submitted.html",
-        approver=approver_k.capitalize(),
+        approver=approver_label,
         start=start_date,
         end=end_date,
         days=days,
@@ -217,60 +230,82 @@ def decision():
     if status not in ("approved", "rejected"):
         return Response("Invalid status", 400)
 
-    d1 = datetime.strptime(sd, "%Y-%m-%d").date()
-    d2 = datetime.strptime(ed, "%Y-%m-%d").date()
-    days = business_days(d1, d2)
-    days = adjust_half_day(days, duration_type)
+    try:
+        d1 = datetime.strptime(sd, "%Y-%m-%d").date()
+        d2 = datetime.strptime(ed, "%Y-%m-%d").date()
+        days = business_days(d1, d2)
+        days = adjust_half_day(days, duration_type)
+    except Exception:
+        days = 1.0
 
-    # Update pending row
+    # Update last Pending row in sheet
     try:
         sheet = get_sheet()
         rows = sheet.get_all_values()
 
         pending_row = None
+        # Start from bottom (most recent)
         for idx in range(len(rows) - 1, 0, -1):
             row = rows[idx]
             if len(row) < 10:
                 continue
-            if row[2] == email and row[4] == sd and row[5] == ed and row[9] == "Pending":
-                pending_row = idx + 1
+            row_email = row[2]
+            row_start = row[4]
+            row_end = row[5]
+            row_status = row[9]
+            if row_email == email and row_start == sd and row_end == ed and row_status == "Pending":
+                pending_row = idx + 1  # gspread is 1-based
                 break
 
         if pending_row:
             sheet.update_cell(pending_row, 10, status.capitalize())
         else:
+            # Fallback: append a new row if we didn't find the pending one
             sheet.append_row([
                 datetime.utcnow().isoformat(timespec="seconds"),
-                name, email, "Decision",
-                sd, ed, days, duration_type, reason,
-                status.capitalize()
+                name,
+                email,
+                "Decision",
+                sd,
+                ed,
+                days,
+                duration_type,
+                reason,
+                status.capitalize(),
             ])
 
     except Exception as e:
         print("Decision sheet error:", e)
 
     # Email requester
-    decision_txt = "approved" if status == "approved" else "rejected"
+    decision_txt = "approved ✅" if status == "approved" else "rejected ❌"
     html = f"""
-    <p>Your request has been <b>{decision_txt}</b>.</p>
-    <p>{sd} → {ed}</p>
+    <p>Hi {name},</p>
+    <p>Your time off request has been <b>{decision_txt}</b>.</p>
+    <ul>
+      <li>Period: {sd} → {ed}</li>
+      <li>Duration: {days} business day(s)</li>
+    </ul>
     """
 
     try:
         send_email(
             subject=f"Time off request – {decision_txt}",
-            to_list=email,
+            to_list=[email],
             body_html=html,
-            cc_list=[ALWAYS_CC],
+            cc_list=[ALWAYS_CC] if ALWAYS_CC else None,
         )
     except Exception as e:
-        print("Email error:", e)
+        print("Decision email error:", e)
 
     return render_template(
         "decision_result.html",
-        name=name, email=email,
-        start=sd, end=ed,
-        days=days, status=status
+        name=name,
+        email=email,
+        start=sd,
+        end=ed,
+        days=days,
+        status=status,
     )
 
 
@@ -278,9 +313,14 @@ def decision():
 @app.route("/_smtp_test")
 def smtp_test():
     try:
-        send_email("SMTP OK", ALWAYS_CC, "<p>SMTP is working.</p>")
+        send_email(
+            subject="Walton Time Off – SMTP test",
+            to_list=[ALWAYS_CC or EMAIL_MARK],
+            body_html="<p>SMTP test OK.</p>",
+        )
         return jsonify(ok=True)
     except Exception as e:
+        print("SMTP test error:", e)
         return jsonify(ok=False, error=str(e)), 500
 
 
