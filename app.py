@@ -322,6 +322,37 @@ def smtp_test():
     except Exception as e:
         print("SMTP test error:", e)
         return jsonify(ok=False, error=str(e)), 500
+@app.route("/admin/reset-sheet", methods=["GET"])
+def reset_sheet():
+    """
+    Clear the Google Sheet and recreate the header row.
+    """
+    try:
+        sheet = get_sheet()
+
+        # Efface tout le contenu de la feuille
+        sheet.clear()
+
+        # Recrée la première ligne d’en-tête
+        header = [
+            "Timestamp",
+            "Name",
+            "Email",
+            "Approver",
+            "Start",
+            "End",
+            "Days",
+            "Duration",
+            "Reason",
+            "Status"
+        ]
+        sheet.append_row(header)
+
+        return jsonify(ok=True, message="Sheet reset and header recreated.")
+    except Exception as e:
+        print("reset-sheet error:", e)
+        return jsonify(ok=False, error=str(e)), 500
+
 
 
 # -----------------------------------------------------------------------------
