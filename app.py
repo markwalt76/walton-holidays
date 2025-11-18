@@ -89,21 +89,20 @@ def get_requests_sheet():
 
 def get_staff_sheet():
     """
-    Sheet 'Staff List' with columns: Name | Email
+    Sheet 'Staff List' with columns: Name | Email | Approver
     """
     wb = get_workbook()
     try:
         ws = wb.worksheet("Staff List")
     except gspread.WorksheetNotFound:
-        ws = wb.add_worksheet(title="Staff List", rows=100, cols=2)
-        ws.append_row(["Name", "Email"])
+        ws = wb.add_worksheet(title="Staff List", rows=100, cols=3)
+        ws.append_row(["Name", "Email", "Approver"])
     return ws
 
 
 def load_staff_list():
     """
-    Returns a list: [{"name": ..., "email": ...}, ...]
-    from 'Staff List'.
+    Returns a list: [{"name": ..., "email": ..., "approver": ...}, ...]
     """
     ws = get_staff_sheet()
     records = ws.get_all_records()
@@ -111,8 +110,13 @@ def load_staff_list():
     for row in records:
         name = row.get("Name") or row.get("name")
         email = row.get("Email") or row.get("email")
+        approver = row.get("Approver") or row.get("approver")
         if name and email:
-            staff.append({"name": name, "email": email})
+            staff.append({
+                "name": name,
+                "email": email,
+                "approver": approver,
+            })
     return staff
 
 
@@ -151,7 +155,6 @@ def send_email(subject: str, to_list, body_html: str, cc_list=None):
     elif isinstance(cc_list, str):
         cc_list = [cc_list]
 
-    # Nettoyer les adresses
     to_list = [str(a).strip() for a in to_list if a]
     cc_list = [str(a).strip() for a in cc_list if a]
 
@@ -187,23 +190,30 @@ def submit():
     form = request.form
 
     employee_name = form.get("employee_name")
-    approver = form.get("approver")
     start_str = form.get("start_date")
     end_str = form.get("end_date")
     duration_type = form.get("duration_type", "full")
     type_of_leave = form.get("type_of_leave")
     reason = form.get("reason", "").strip()
 
-    if not (employee_name and approver and start_str and end_str and type_of_leave):
+    if not (employee_name and start_str and end_str and type_of_leave):
         return Response("Missing fields", 400)
 
-    # Récupérer email de l’employé depuis Staff List
-    staff_map = {m["name"]: m["email"] for m in load_staff_list()}
-    employee_email = staff_map.get(employee_name)
-    if not employee_email:
-        return Response("Employee email not found in Staff List", 400)
+    # Load staff
+    staff_list = load_staff_list()
+    staff_email_map = {m["name"]: m["email"] for m in staff_list}
+    staff_approver_map = {m["name"]: m["approver"] for m in staff_list}
 
-    # Dates + calcul jours
+    employee_email = staff_email_map.get(employee_name)
+    approver = staff_approver_map.get(employee_name)
+
+    if not employee_email:
+        return Response("Employee email not found", 400)
+
+    if not approver:
+        return Response("Approver not configured for this employee", 400)
+
+    # Convert dates
     try:
         d1 = datetime.strptime(start_str, "%Y-%m-%d").date()
         d2 = datetime.strptime(end_str, "%Y-%m-%d").date()
@@ -212,15 +222,15 @@ def submit():
 
     days = business_days(d1, d2)
     if days == -1:
-        return Response("End date cannot be before start date.", 400)
+        return Response("End date cannot be before start", 400)
 
-    # Half day seulement si même date
+    # Half day rules
     if duration_type == "half" and d1 != d2:
-        return Response("Half day allowed only when start and end dates match.", 400)
+        return Response("Half day allowed only when start=end", 400)
 
     days = adjust_half_day(days, duration_type)
 
-    # Enregistrement dans Requests
+    # Save request
     sheet = get_requests_sheet()
     timestamp = datetime.utcnow().isoformat(timespec="seconds")
 
@@ -239,39 +249,40 @@ def submit():
     ]
     sheet.append_row(row)
 
-    # Emails
+    # Email approver mapping
+    approver_email_map = {
+        "Mark": EMAIL_MARK,
+        "Nhàn": EMAIL_NHAN,
+        "Nhan": EMAIL_NHAN,
+        "Anh": EMAIL_ANH,
+    }
+
+    approver_email = approver_email_map.get(approver, EMAIL_MARK)
+
+    # Build approve/reject links
+    approve_link = (
+        f"{BASE_URL}/decision"
+        f"?status=approved"
+        f"&email={quote_plus(employee_email)}"
+        f"&name={quote_plus(employee_name)}"
+        f"&sd={start_str}"
+        f"&ed={end_str}"
+        f"&reason={quote_plus(reason)}"
+        f"&dt={duration_type}"
+    )
+    reject_link = (
+        f"{BASE_URL}/decision"
+        f"?status=rejected"
+        f"&email={quote_plus(employee_email)}"
+        f"&name={quote_plus(employee_name)}"
+        f"&sd={start_str}"
+        f"&ed={end_str}"
+        f"&reason={quote_plus(reason)}"
+        f"&dt={duration_type}"
+    )
+
     try:
-        approver_email_map = {
-            "Mark": EMAIL_MARK,
-            "Nhàn": EMAIL_NHAN,
-            "Nhan": EMAIL_NHAN,
-            "Anh": EMAIL_ANH,
-        }
-        approver_email = approver_email_map.get(approver, EMAIL_MARK)
-
-        # Liens approve / reject
-        approve_link = (
-            f"{BASE_URL}/decision"
-            f"?status=approved"
-            f"&email={quote_plus(employee_email)}"
-            f"&name={quote_plus(employee_name)}"
-            f"&sd={start_str}"
-            f"&ed={end_str}"
-            f"&reason={quote_plus(reason)}"
-            f"&dt={duration_type}"
-        )
-        reject_link = (
-            f"{BASE_URL}/decision"
-            f"?status=rejected"
-            f"&email={quote_plus(employee_email)}"
-            f"&name={quote_plus(employee_name)}"
-            f"&sd={start_str}"
-            f"&ed={end_str}"
-            f"&reason={quote_plus(reason)}"
-            f"&dt={duration_type}"
-        )
-
-        # 1) mail à l’approbateur
+        # 1) Approver email
         approver_body = f"""
         <p>Hello {approver},</p>
         <p>You have a new time off request:</p>
@@ -295,7 +306,7 @@ def submit():
             body_html=approver_body,
         )
 
-        # 2) mail à l’employé
+        # 2) Confirmation email to employee
         employee_body = f"""
         <p>Hello {employee_name},</p>
         <p>Your time off request has been received.</p>
@@ -304,6 +315,7 @@ def submit():
           <li><b>Days</b>: {days}</li>
           <li><b>Duration</b>: {duration_type}</li>
           <li><b>Type of leave</b>: {type_of_leave}</li>
+          <li><b>Approver</b>: {approver}</li>
         </ul>
         <p>You will receive an update once a decision is made.</p>
         """
@@ -314,10 +326,9 @@ def submit():
             body_html=employee_body,
         )
 
-     
-
     except Exception as e:
         print("EMAIL ERROR in /submit:", e)
+
 
     return render_template(
         "submitted.html",
@@ -330,7 +341,7 @@ def submit():
 
 @app.route("/decision", methods=["GET"])
 def decision():
-    status = request.args.get("status")  # approved / rejected
+    status = request.args.get("status")
     email = request.args.get("email", "")
     name = request.args.get("name", "")
     sd = request.args.get("sd")
@@ -349,7 +360,7 @@ def decision():
     except Exception:
         days = 1.0
 
-    # Met à jour la dernière ligne Pending correspondante
+    # Update sheet
     try:
         sheet = get_requests_sheet()
         rows = sheet.get_all_values()
@@ -364,7 +375,7 @@ def decision():
             row_end = row[5]
             row_status = row[10]
             if row_email == email and row_start == sd and row_end == ed and row_status == "Pending":
-                pending_row = idx + 1  # gspread 1-based
+                pending_row = idx + 1
                 break
 
         if pending_row:
@@ -379,7 +390,7 @@ def decision():
                 ed,
                 days,
                 duration_type,
-                "",         # Type of leave inconnu ici
+                "",
                 reason,
                 status.capitalize(),
             ])
@@ -387,7 +398,7 @@ def decision():
     except Exception as e:
         print("Decision sheet error:", e)
 
-    # Mail à l’employé
+    # Email to employee + CC to mw@walton.fr
     decision_txt = "approved ✅" if status == "approved" else "rejected ❌"
     body = f"""
     <p>Hi {name},</p>
@@ -402,7 +413,7 @@ def decision():
         send_email(
             subject=f"Walton Time Off – Request {status}",
             to_list=[email],
-cc_list=[ALWAYS_CC],
+            cc_list=[ALWAYS_CC],
             body_html=body,
         )
     except Exception as e:
@@ -435,9 +446,6 @@ def smtp_test():
 
 @app.route("/admin/reset-sheet", methods=["GET"])
 def reset_sheet():
-    """
-    Clear the Requests sheet and recreate the header.
-    """
     try:
         sheet = get_requests_sheet()
         sheet.clear()
