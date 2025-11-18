@@ -1,4 +1,10 @@
-import os
+Request Rejected ❌
+Hello ,
+
+Period: 2025-11-20 → 2025-11-20
+Total business days: 1.0
+
+You have also received an email with this decision.import os
 import json
 import smtplib
 from email.message import EmailMessage
