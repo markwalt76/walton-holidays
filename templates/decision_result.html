@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="utf-8">
-  <title>Request Submitted</title>
+  <title>Decision</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     body {
@@ -24,6 +24,14 @@
       margin-top: 0;
       color: #333;
     }
+    .approved {
+      color: #0a8a0a;
+      font-weight: bold;
+    }
+    .rejected {
+      color: #c41616;
+      font-weight: bold;
+    }
     .info {
       color: #555;
       margin-top: 5px;
@@ -34,18 +42,22 @@
 <body>
 
   <div class="card">
-    <h2>Request Submitted ✔️</h2>
 
-    <p>Your request has been successfully sent to your approver.</p>
+    {% if status == 'approved' %}
+      <h2 class="approved">Request Approved ✔️</h2>
+    {% else %}
+      <h2 class="rejected">Request Rejected ❌</h2>
+    {% endif %}
+
+    <p>Hello {{ name }},</p>
 
     <p class="info">
       <b>Period:</b> {{ start }} → {{ end }}<br>
-      <b>Total days:</b> {{ days }}
+      <b>Total business days:</b> {{ days }}
     </p>
 
-    <p class="info">
-      You will receive a confirmation email once your approver makes a decision.
-    </p>
+    <p>You have also received an email with this decision.</p>
+
   </div>
 
 </body>
