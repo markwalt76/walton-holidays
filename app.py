@@ -1,10 +1,4 @@
-Request Rejected ❌
-Hello ,
-
-Period: 2025-11-20 → 2025-11-20
-Total business days: 1.0
-
-You have also received an email with this decision.import os
+import os
 import json
 import smtplib
 from email.message import EmailMessage
@@ -183,23 +177,21 @@ def send_email(subject: str, to_list, body_html: str, cc_list=None):
 
 
 # -----------------------------------------------------------------------------
-# ROUTES
+# ROUTES — MAIN FORM
 # -----------------------------------------------------------------------------
 @app.route("/", methods=["GET"])
 def index():
-    """
-    Show the main form. If Staff List / Google Sheets fails,
-    still render the page with an empty staff list instead of crashing.
-    """
     try:
         staff = load_staff_list()
     except Exception as e:
         print("Error loading staff list:", e)
         staff = []
-
     return render_template("form.html", staff=staff)
 
 
+# -----------------------------------------------------------------------------
+# ROUTE — SUBMIT REQUEST
+# -----------------------------------------------------------------------------
 @app.route("/submit", methods=["POST"])
 def submit():
     form = request.form
@@ -310,8 +302,8 @@ def submit():
           <li><b>Reason</b>: {reason or "—"}</li>
         </ul>
         <p>
-          <a href="{approve_link}">✅ Approve</a> |
-          <a href="{reject_link}">❌ Reject</a>
+          <a href="{approve_link}">Approve</a> |
+          <a href="{reject_link}">Reject</a>
         </p>
         """
 
@@ -328,7 +320,7 @@ def submit():
         <ul>
           <li><b>Dates</b>: {start_str} → {end_str}</li>
           <li><b>Days</b>: {days}</li>
-          <li><b>Duration</b>: {duration_type}</li>
+          <li><b>Duration</b>: {{duration_type}}</li>
           <li><b>Type of leave</b>: {type_of_leave}</li>
           <li><b>Approver</b>: {approver}</li>
         </ul>
@@ -354,8 +346,12 @@ def submit():
     )
 
 
+# -----------------------------------------------------------------------------
+# ROUTE — DECISION
+# -----------------------------------------------------------------------------
 @app.route("/decision", methods=["GET"])
 def decision():
+
     status = request.args.get("status")
     email = request.args.get("email", "")
     name = request.args.get("name", "")
@@ -396,7 +392,7 @@ def decision():
         if pending_row:
             sheet.update_cell(pending_row, 11, status.capitalize())
         else:
-            sheet.append_row([
+            sheet.append_row((
                 datetime.utcnow().isoformat(timespec="seconds"),
                 name,
                 email,
@@ -408,13 +404,14 @@ def decision():
                 "",
                 reason,
                 status.capitalize(),
-            ])
+            ))
 
     except Exception as e:
         print("Decision sheet error:", e)
 
-    # Email to employee + CC to mw@walton.fr
-    decision_txt = "approved ✅" if status == "approved" else "rejected ❌"
+    # Email to employee + CC to admin
+    decision_txt = "approved" if status == "approved" else "rejected"
+
     body = f"""
     <p>Hi {name},</p>
     <p>Your time off request has been <b>{decision_txt}</b>.</p>
@@ -426,7 +423,7 @@ def decision():
 
     try:
         send_email(
-            subject=f"Walton Time Off – Request {status}",
+            subject=f"Walton Time Off – Request {decision_txt}",
             to_list=[email],
             cc_list=[ALWAYS_CC],
             body_html=body,
@@ -445,12 +442,15 @@ def decision():
     )
 
 
+# -----------------------------------------------------------------------------
+# SMTP TEST
+# -----------------------------------------------------------------------------
 @app.route("/_smtp_test")
 def smtp_test():
     try:
         send_email(
             subject="Walton Time Off – SMTP test",
-            to_list=[ALWAYS_CC or EMAIL_MARK],
+            to_list=[EMAIL_MARK],
             body_html="<p>SMTP test OK.</p>",
         )
         return jsonify(ok=True)
@@ -459,6 +459,9 @@ def smtp_test():
         return jsonify(ok=False, error=str(e)), 500
 
 
+# -----------------------------------------------------------------------------
+# RESET SHEET
+# -----------------------------------------------------------------------------
 @app.route("/admin/reset-sheet", methods=["GET"])
 def reset_sheet():
     try:
