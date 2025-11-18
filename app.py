@@ -314,13 +314,7 @@ def submit():
             body_html=employee_body,
         )
 
-        # 3) copie à ALWAYS_CC
-        if ALWAYS_CC:
-            send_email(
-                subject="Walton Time Off – Copy of request",
-                to_list=[ALWAYS_CC],
-                body_html=approver_body,
-            )
+     
 
     except Exception as e:
         print("EMAIL ERROR in /submit:", e)
@@ -408,6 +402,7 @@ def decision():
         send_email(
             subject=f"Walton Time Off – Request {status}",
             to_list=[email],
+cc_list=[ALWAYS_CC],
             body_html=body,
         )
     except Exception as e:
