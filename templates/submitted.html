@@ -1,1 +1,64 @@
-<!-- submitted.html (unchanged) -->
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>Decision</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      padding: 24px;
+      background: #f7f7fb;
+    }
+    .card {
+      max-width: 600px;
+      margin: 40px auto;
+      background: #fff;
+      padding: 24px;
+      border-radius: 12px;
+      box-shadow: 0 6px 24px rgba(0,0,0,.08);
+      text-align: center;
+    }
+    h2 {
+      margin-top: 0;
+      color: #333;
+    }
+    .approved {
+      color: #0a8a0a;
+      font-weight: bold;
+    }
+    .rejected {
+      color: #c41616;
+      font-weight: bold;
+    }
+    .info {
+      color: #555;
+      margin-top: 5px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="card">
+
+    {% if status == 'approved' %}
+      <h2 class="approved">Request Approved ✔️</h2>
+    {% else %}
+      <h2 class="rejected">Request Rejected ❌</h2>
+    {% endif %}
+
+    <p>Hello {{ name }},</p>
+
+    <p class="info">
+      <b>Period:</b> {{ start }} → {{ end }}<br>
+      <b>Total business days:</b> {{ days }}
+    </p>
+
+    <p>You have also received an email with this decision.</p>
+
+  </div>
+
+</body>
+</html>
