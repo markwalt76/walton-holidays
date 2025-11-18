@@ -181,7 +181,16 @@ def send_email(subject: str, to_list, body_html: str, cc_list=None):
 # -----------------------------------------------------------------------------
 @app.route("/", methods=["GET"])
 def index():
-    staff = load_staff_list()
+    """
+    Show the main form. If Staff List / Google Sheets fails,
+    still render the page with an empty staff list instead of crashing.
+    """
+    try:
+        staff = load_staff_list()
+    except Exception as e:
+        print("Error loading staff list:", e)
+        staff = []
+
     return render_template("form.html", staff=staff)
 
 
